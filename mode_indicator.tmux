@@ -37,21 +37,45 @@ init_tmux_mode_indicator() {
     sync_style=$(indicator_style "$sync_mode_style_config" "bg=red,fg=black") \
     empty_style=$(indicator_style "$empty_mode_style_config" "bg=cyan,fg=black")
 
+  # Custom prompt / style (for backward compatibility)
   local -r \
-    custom_prompt="#(tmux show-option -qv $custom_prompt_config)" \
-    custom_style="#(tmux show-option -qv $custom_mode_style_config)"
+    custom_prompt="#(tmux show-option -gqv $custom_prompt_config)" \
+    custom_style="#(tmux show-option -gqv $custom_mode_style_config)"
 
-  local -r \
-    mode_prompt="#{?#{!=:$custom_prompt,},$custom_prompt,#{?client_prefix,$prefix_prompt,#{?pane_in_mode,$copy_prompt,#{?pane_synchronized,$sync_prompt,$empty_prompt}}}}" \
-    mode_style="#{?#{!=:$custom_style,},#[$custom_style],#{?client_prefix,$prefix_style,#{?pane_in_mode,$copy_style,#{?pane_synchronized,$sync_style,$empty_style}}}}"
+  # ---------------------------------------------------------------------------
+  # ENV-VAR MODE READING
+  # The env var is named tmux_mode_{session_id}. Because session IDs are $N,
+  # we must single-quote them inside the #() so the shell does not expand $N.
+  # ---------------------------------------------------------------------------
+  local -r env_var_name="tmux_mode_#{session_id}"
+  local -r env_mode="#(tmux show-environment -t '#{session_id}' '${env_var_name}' 2>/dev/null | sed 's/^[^=]*=//')"
 
+  # Map env-mode value to the correct prompt and style
+  local -r env_prompt="#{?#{==:$env_mode,prefix},$prefix_prompt,#{?#{==:$env_mode,copy},$copy_prompt,#{?#{==:$env_mode,sync},$sync_prompt,$empty_prompt}}}"
+  local -r env_style="#{?#{==:$env_mode,prefix},$prefix_style,#{?#{==:$env_mode,copy},$copy_style,#{?#{==:$env_mode,sync},$sync_style,$empty_style}}}"
+
+  # Fallback to native tmux variables when the env var is not yet set
+  local -r fallback_prompt="#{?client_prefix,$prefix_prompt,#{?pane_in_mode,$copy_prompt,#{?pane_synchronized,$sync_prompt,$empty_prompt}}}"
+  local -r fallback_style="#{?client_prefix,$prefix_style,#{?pane_in_mode,$copy_style,#{?pane_synchronized,$sync_style,$empty_style}}}"
+
+  # Use env-var mapping if the env var is populated, else use native fallback
+  local -r mode_prompt="#{?#{!=:$env_mode,},$env_prompt,$fallback_prompt}"
+  local -r mode_style="#{?#{!=:$env_mode,},$env_style,$fallback_style}"
+
+  # Build final indicator
   local -r mode_indicator="#[default]$mode_style$mode_prompt#[default]"
 
+  # Replace placeholder in status-left and status-right
   local -r status_left_value="$(tmux_option "status-left")"
   tmux set-option -gq "status-left" "${status_left_value/$mode_indicator_placeholder/$mode_indicator}"
 
   local -r status_right_value="$(tmux_option "status-right")"
   tmux set-option -gq "status-right" "${status_right_value/$mode_indicator_placeholder/$mode_indicator}"
+
+  # Start the background watcher
+  local -r plugin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  tmux run-shell -b "${plugin_dir}/mode_watcher.sh"
 }
 
 init_tmux_mode_indicator
+
