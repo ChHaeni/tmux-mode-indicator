@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-set -e
-
 declare -r mode_indicator_placeholder="\#{tmux_mode_indicator}"
 
 declare -r prefix_prompt_config='@mode_indicator_prefix_prompt'
@@ -78,4 +76,3 @@ init_tmux_mode_indicator() {
 }
 
 init_tmux_mode_indicator
-
